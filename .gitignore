@@ -1,0 +1,13 @@
+# secrets and environments
+.env
+.venv/
+.streamlit/secrets.toml
+
+# python / notebooks
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# environment-specific agent skill links
+Streamlit/.agents/
+Streamlit/.claude/

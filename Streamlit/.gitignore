@@ -1,0 +1,8 @@
+.venv/
+.env
+.streamlit/secrets.toml
+__pycache__/
+
+ # Streamlit agent skills (environment-specific symlinks)
+.agents\skills/developing-with-streamlit
+.claude\skills/developing-with-streamlit
