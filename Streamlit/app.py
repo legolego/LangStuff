@@ -3,6 +3,7 @@
 Every element is a placeholder. Nothing is connected yet; wire in the
 oracledb connection and the LangGraph agent where the TODOs are.
 """
+import importlib
 import os
 from pathlib import Path
 
@@ -10,8 +11,13 @@ import oracledb
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
-from agent import MODEL_NAME, ROW_LIMIT, build_graph
+import agent
 from history_nav import history_nav_html
+
+# Streamlit does not always re-import an edited helper module while the app keeps
+# running, so reload agent.py on every run; edits to it take effect without a restart.
+agent = importlib.reload(agent)
+from agent import MODEL_NAME, ROW_LIMIT, build_graph  # noqa: E402
 
 st.set_page_config(page_title="Ask the database", page_icon="🗄️", layout="wide")
 

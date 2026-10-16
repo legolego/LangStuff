@@ -21,11 +21,15 @@ SCHEMA_NOTES = {
         "Each row in the medals tables and view is ONE ATHLETE'S medal, so a team event "
         "(a relay, rowing eight, basketball, water polo) has one row per team member for a "
         "single medal. When asked how many medals a country or person won, count one per "
-        "EVENT, not one per athlete row: count DISTINCT events (include sport, discipline or "
-        "event gender columns if the event name alone is ambiguous, e.g. COUNT(DISTINCT ...) "
-        "or SELECT DISTINCT in a subquery). Only when asked how many ATHLETES won something, "
-        "count distinct athletes. The data contains only Summer Games, so a question about a "
-        "Winter Games has no answer."
+        "medal, not one per athlete row: count DISTINCT medals, where one medal is identified "
+        "by the Games (the edition/year column or the games id), the sport or discipline, the "
+        "event and the event gender TOGETHER, e.g. COUNT(DISTINCT edition || '|' || discipline "
+        "|| '|' || event || '|' || event_gender) using the columns that exist, or SELECT "
+        "DISTINCT in a subquery. ALWAYS include the Games year or id in that distinct key: the "
+        "same event is held at every Games, so leaving it out merges the same event won at "
+        "different Games into one medal and undercounts anyone who won it more than once. "
+        "Only when asked how many ATHLETES won something, count distinct athletes. The data "
+        "contains only Summer Games, so a question about a Winter Games has no answer."
     ),
 }
 MAX_SQL_CHARS = 4000  # longer than this is not a real query
@@ -51,6 +55,43 @@ def check_sql(sql: str, schema_df: pd.DataFrame, owner: str) -> str:
         return (
             f"Unknown table(s): {', '.join(unknown)[:300]}. "
             f"The only tables and views in {owner} are: {', '.join(sorted(tables))}."
+        )
+    return check_rules(sql, owner)
+
+
+_AGGREGATE = re.compile(r"\b(?:COUNT|SUM|AVG|MIN|MAX)\s*\(", re.I)
+_ORDER_BY = re.compile(r"ORDER\s+BY[^)]*?(?=\)|FETCH|$)", re.I | re.S)
+
+
+def check_rules(sql: str, schema: str) -> str:
+    """Rules the model is told but often skips; checked in code so they are enforced.
+
+    Returns a description of the problem for the model to fix, or ''.
+    """
+    if re.search(r"\bROWNUM\s*=\s*1\b", sql, re.I):
+        return (
+            "Do not use ROWNUM = 1: it returns one arbitrary row and hides ties. Select the "
+            "number you rank by as a named column, ORDER BY that column DESC, and use "
+            "FETCH FIRST 5 ROWS ONLY."
+        )
+    ordered_by = " ".join(m.group(0) for m in _ORDER_BY.finditer(sql))
+    if _AGGREGATE.search(ordered_by) and not _AGGREGATE.search(_ORDER_BY.sub("", sql)):
+        return (
+            "You ORDER BY a count or total that is not in the SELECT list, so the number is "
+            "missing from the result. Select it as a named column (for example "
+            "COUNT(...) AS GOLD_MEDALS), ORDER BY that column DESC, and return the top 5 rows."
+        )
+    if (
+        schema == "OLYM"
+        and re.search(r"COUNT\s*\(\s*DISTINCT[^)]*\bEVENT(?:_ID)?\b", sql, re.I)
+        and not re.search(r"\b(?:EDITION|YEAR|GAMES?_ID|GAME_ID)\b", sql, re.I)
+    ):
+        return (
+            "COUNT(DISTINCT ...) over events must include the Games year (the EDITION column "
+            "or the games id) in the distinct key, for example COUNT(DISTINCT edition || '|' "
+            "|| sport || '|' || event || '|' || event_gender). Without it the same event won "
+            "at different Games is counted once, and people who won it several times are "
+            "undercounted."
         )
     return ""
 
@@ -128,6 +169,11 @@ def build_graph(run_query: Callable[..., pd.DataFrame]):
             "You cannot see the data, so a text value may be spelled differently from the "
             "question (codes vs names, abbreviations, capitalization); when unsure of the "
             "exact value, compare with UPPER(column) LIKE '%VALUE%'.\n"
+            "For 'most', 'top', 'highest' or 'who/which' ranking questions, SELECT the number "
+            "you rank by as a column with a clear alias (for example GOLD_MEDALS) and return "
+            "the top 5 rows ordered by it descending, so the number, any ties and the "
+            "runners-up are visible. Never rank by something that is not in the SELECT list, "
+            "and do not use ROWNUM = 1 to return a single row.\n"
             + (f"Notes about this data: {SCHEMA_NOTES[state['schema']]}\n" if state["schema"] in SCHEMA_NOTES else "")
             + f"Question: {state['question']}\n"
         )
@@ -244,6 +290,9 @@ def build_graph(run_query: Callable[..., pd.DataFrame]):
             prompt += f"The result was capped at {ROW_LIMIT} rows, so there may be more.\n"
         prompt += (
             "\nAnswer the question in 1-3 plain sentences using the result. "
+            "Always include the actual numbers from the result: for a count or total, state the "
+            "number; for a ranking or 'who/which' question, name the top results (up to 5) each "
+            "with its number, for example 'Michael Phelps (23)'. "
             "Say exactly what was counted (for example medal events, not individual athletes)."
         )
         if state.get("no_rows"):  # still empty/zero after the retries
