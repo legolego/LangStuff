@@ -22,30 +22,70 @@ that was used, the result table, and a trace of the agent's steps.
 
 ### How the agent works
 
-The agent is a small LangGraph graph with two retry loops:
+The agent is a small LangGraph graph with two kinds of retry. Each box is a node,
+each line is an edge. The same diagram, with a table of what each node reads and
+writes, is at the top of `Streamlit/agent.py`.
 
 ```
-get_schema -> write_sql -> run_sql -> answer
-                  ^           |
-                  |           +-- SQL error ----------------+
-                  |                                         |
-                  +----- lookup_values <-- 0 rows ----------+   (up to 2 retries)
+        START
+          |
+          v
+   +--------------+
+   |  get_schema  |  read the table and column names of the chosen schema
+   +--------------+
+          |
+          v
+   +--------------+
+   |  write_sql   |  ask the model for ONE SELECT statement
+   +--------------+
+          |
+          v
+   +--------------+
+   |   run_sql    |  check the SQL, then run it against Oracle
+   +--------------+
+          |
+          |  after_run() picks the next node:
+          |
+          +--- the SQL failed, retries left ---------> write_sql   (try again)
+          |
+          +--- it ran but found nothing, retries left
+          |           |
+          |           v
+          |    +---------------+
+          |    | lookup_values |  fetch the real values of the columns it filtered on
+          |    +---------------+
+          |           |
+          |           +------------------------------> write_sql   (try again, with hints)
+          |
+          +--- a good result, or no retries left
+                      |
+                      v
+               +--------------+
+               |    answer    |  turn the result into 1-3 plain sentences
+               +--------------+
+                      |
+                      v
+                     END
 ```
 
 1. **get_schema**: reads the table and column names of the chosen schema from Oracle.
 2. **write_sql**: asks the model for a single `SELECT` using only those tables and columns.
-3. **run_sql**: runs it. If it fails, the error goes back to `write_sql` so the model can fix its own query.
+3. **run_sql**: checks the SQL (not too long, only real tables, a few ranking rules), then runs it. If it fails, the error goes back to `write_sql` so the model can fix its own query.
 4. **lookup_values**: if the query runs but finds nothing (no rows, or a `COUNT` that comes back as 0), the model probably guessed a value wrong (for example `'United States'` instead of `'USA'`). This step fetches the real distinct values of the text columns the query filtered on, and `write_sql` retries with them.
 5. **answer**: summarises the result in 1 to 3 sentences.
 
+Both kinds of retry share one budget, `MAX_RETRIES` in `Streamlit/agent.py` (3, so up
+to 4 attempts), which is why the agent always stops.
+
 ### Schemas
 
-A sidebar dropdown picks which FreeSQL sample schema to query. Each schema keeps
-its own conversation.
+A dropdown in the page heading ("Ask your database about ...") picks which FreeSQL
+sample schema to query, and the table list in the sidebar follows it. Each schema
+keeps its own conversation and has three example questions.
 
-- Olympic Data (`OLYM`), the default
-- Customer Orders (`CO`)
-- Human Resources (`HR`)
+- Olympic data (`OLYM`), the default
+- Customer orders (`CO`)
+- Human resources (`HR`)
 
 The Olympic data appears to contain only the Summer Games (its `SEASON` column
 has a single value, `Summer`), so questions about Winter Games have no answer in
