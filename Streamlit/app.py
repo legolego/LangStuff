@@ -158,10 +158,6 @@ with st.sidebar:
         except Exception as e:
             st.error(f"Could not list tables: {e}")
 
-    if st.button("Clear conversation"):
-        st.session_state.histories[schema] = []  # only this schema's conversation
-        st.rerun()
-
 # ------------------------------------------------------------------- main page
 st.caption("Type a question in plain English. The app writes SQL, runs it, and explains the result.")
 
@@ -185,8 +181,22 @@ for turn in history:
     with st.chat_message("assistant"):
         st.write(turn["answer"])
 
-# Input
-question = st.chat_input(f"Ask a question about {SCHEMAS[schema].lower()}...") or clicked
+# Input: the chat box with the clear button to its right, pinned to the bottom of the page.
+with st.bottom:
+    with st.container(horizontal=True, vertical_alignment="center"):
+        question = st.chat_input(f"Ask a question about {SCHEMAS[schema].lower()}...", width="stretch") or clicked
+        clear = st.button(
+            "Clear",
+            icon=":material/delete_sweep:",
+            help="Clear this conversation",
+            # the new turn is only added to history at the end of the run, so a question
+            # being asked right now also counts as something to clear
+            disabled=not (history or question),
+            width="content",
+        )
+if clear:
+    st.session_state.histories[schema] = []  # only this schema's conversation
+    st.rerun()
 
 if question:
     with st.chat_message("user"):
