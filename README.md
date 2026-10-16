@@ -22,18 +22,21 @@ that was used, the result table, and a trace of the agent's steps.
 
 ### How the agent works
 
-The agent is a small LangGraph graph with a retry loop:
+The agent is a small LangGraph graph with two retry loops:
 
 ```
 get_schema -> write_sql -> run_sql -> answer
                   ^           |
-                  +-- error --+   (up to 2 retries)
+                  |           +-- SQL error ----------------+
+                  |                                         |
+                  +----- lookup_values <-- 0 rows ----------+   (up to 2 retries)
 ```
 
 1. **get_schema**: reads the table and column names of the chosen schema from Oracle.
 2. **write_sql**: asks the model for a single `SELECT` using only those tables and columns.
 3. **run_sql**: runs it. If it fails, the error goes back to `write_sql` so the model can fix its own query.
-4. **answer**: summarises the result in 1 to 3 sentences.
+4. **lookup_values**: if the query runs but finds nothing (no rows, or a `COUNT` that comes back as 0), the model probably guessed a value wrong (for example `'United States'` instead of `'USA'`). This step fetches the real distinct values of the text columns the query filtered on, and `write_sql` retries with them.
+5. **answer**: summarises the result in 1 to 3 sentences.
 
 ### Schemas
 
@@ -44,13 +47,17 @@ its own conversation.
 - Customer Orders (`CO`)
 - Human Resources (`HR`)
 
+The Olympic data appears to contain only the Summer Games (its `SEASON` column
+has a single value, `Summer`), so questions about Winter Games have no answer in
+it. The agent says so when that happens.
+
 To add another, add a line to the `SCHEMAS` dictionary in `Streamlit/app.py`.
 
 ### Safety
 
 - Only statements starting with `SELECT` or `WITH` are run.
-- Results are capped at 100 rows.
-- The model sees table and column names and types when writing SQL. When writing the answer it also sees up to the first 20 rows of the result.
+- Results are capped at 200 rows (`ROW_LIMIT` in `Streamlit/agent.py`).
+- The model sees table and column names and types when writing SQL. When writing the answer it also sees the result itself (up to about 12,000 characters of it; if a result is cut off, the model is told so and not to guess about the rest).
 
 ### Model
 

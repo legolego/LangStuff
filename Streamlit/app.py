@@ -10,7 +10,8 @@ import oracledb
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
-from agent import MODEL_NAME, build_graph
+from agent import MODEL_NAME, ROW_LIMIT, build_graph
+from history_nav import history_nav_html
 
 st.set_page_config(page_title="Ask your database", page_icon="🗄️", layout="wide")
 
@@ -106,7 +107,7 @@ with st.sidebar:
 
     st.subheader("Safety")
     st.toggle("Read-only (SELECT only)", value=True, disabled=True)
-    st.slider("Max rows returned", 10, 1000, 100, disabled=True)
+    st.slider("Max rows returned", 10, 1000, ROW_LIMIT, disabled=True)
 
     st.subheader("Schema")
     schema = st.selectbox(
@@ -146,7 +147,7 @@ examples = [
     "Which tables are in the OLYM schema?",
 ]
 for col, example in zip(cols, examples):
-    col.button(example, use_container_width=True, disabled=True)  # TODO: enable
+    col.button(example, width='stretch', disabled=True)  # TODO: enable
 
 st.divider()
 
@@ -165,11 +166,12 @@ if question:
         st.write(question)
 
     with st.chat_message("assistant"):
-        final, trace = {}, []
+        final, trace, log = {}, [], []
         with st.status("Thinking...", expanded=True) as status:
             for step in get_graph(AGENT_FILE.stat().st_mtime).stream({"question": question, "schema": schema}, stream_mode="updates"):
                 for node, update in step.items():
                     trace.append(node)
+                    log.append((node, update))  # keep every step, not just the merged result
                     st.write(f"✅ {node}")
                     final.update(update)  # merge each node's changes into one dict
             status.update(label="Done", state="complete")
@@ -185,8 +187,26 @@ if question:
             if final.get("error"):
                 st.error(final["error"])
             else:
-                st.dataframe(final["df"], use_container_width=True)
+                st.dataframe(final["df"], width='stretch')
         with tab_trace:
             st.write(" → ".join(trace))
+            for node, update in log:
+                if node == "write_sql":
+                    st.caption(f"write_sql, attempt {update['attempts']}")
+                    st.code(update["sql"], language="sql")
+                elif node == "run_sql":
+                    if update.get("error"):
+                        st.error(update["error"])
+                    elif update.get("no_rows"):
+                        st.warning("The query ran but found nothing (0 rows, or a count of 0).")
+                    else:
+                        st.caption(f"run_sql: {len(update['df'])} rows")
+                elif node == "lookup_values" and update.get("hints"):
+                    st.caption("lookup_values: real values from the database")
+                    st.code(update["hints"], language="text")
 
     history.append({"question": question, "answer": final["answer"]})
+
+# Up/down arrows in the chat box recall earlier questions (this schema's only).
+# Rendered last so the list includes the question that was just asked.
+st.html(history_nav_html([t["question"] for t in history]), unsafe_allow_javascript=True)
