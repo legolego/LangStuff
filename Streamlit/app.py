@@ -13,13 +13,32 @@ from dotenv import load_dotenv
 from agent import MODEL_NAME, ROW_LIMIT, build_graph
 from history_nav import history_nav_html
 
-st.set_page_config(page_title="Ask your database", page_icon="🗄️", layout="wide")
+st.set_page_config(page_title="Ask the database", page_icon="🗄️", layout="wide")
 
 # FreeSQL sample schemas: owner code -> display name
 SCHEMAS = {
-    "OLYM": "Olympic Data",
-    "CO": "Customer Orders",
-    "HR": "Human Resources",
+    "OLYM": "Olympic data",
+    "CO": "Customer orders",
+    "HR": "Human resources",
+}
+
+# Three example questions per schema; the buttons on the page ask them.
+SAMPLE_QUESTIONS = {
+    "OLYM": [
+        "How many gold medals did the USA win in 1984?",
+        "Which athletes have won the most gold medals?",
+        "Which cities have hosted the Olympics, and in which years?",
+    ],
+    "CO": [
+        "What are the five best-selling products by revenue?",
+        "How many orders are there in each status?",
+        "Which customers have placed the most orders?",
+    ],
+    "HR": [
+        "Who are the five highest paid employees?",
+        "What is the average salary in each department?",
+        "Which employees earn more than their manager?",
+    ],
 }
 
 # Local dev: .env sits in the parent folder. On Streamlit Cloud: st.secrets.
@@ -89,6 +108,22 @@ def get_graph(agent_mtime: float):
 if "histories" not in st.session_state:
     st.session_state.histories = {}  # schema code -> list of {"question", "answer"}
 
+# ------------------------------------------------------------------ banner
+st.image(str(Path(__file__).resolve().parent / "assets" / "header.svg"), width="stretch")
+
+# ------------------------------------------------------------------ page header
+# The schema dropdown sits in the heading: "Ask your database about [Olympic data]".
+# It is created before the sidebar so the sidebar's table list follows the selection.
+with st.container(horizontal=True, vertical_alignment="center"):
+    st.title(":material/database: Ask your database about", width="content")
+    schema = st.selectbox(
+        "Schema",
+        options=list(SCHEMAS),
+        format_func=lambda code: SCHEMAS[code],
+        label_visibility="collapsed",
+        width=260,
+    )
+
 # ---------------------------------------------------------------------- sidebar
 with st.sidebar:
     st.header("Settings")
@@ -109,15 +144,8 @@ with st.sidebar:
     st.toggle("Read-only (SELECT only)", value=True, disabled=True)
     st.slider("Max rows returned", 10, 1000, ROW_LIMIT, disabled=True)
 
-    st.subheader("Schema")
-    schema = st.selectbox(
-        "Schema",
-        options=list(SCHEMAS),
-        index=list(SCHEMAS).index("OLYM"),
-        format_func=lambda code: f"{SCHEMAS[code]} ({code})",
-        label_visibility="collapsed",
-    )
-    with st.expander(f"Tables in {schema}", expanded=True):
+    st.subheader("Tables")
+    with st.expander(f"{SCHEMAS[schema]} ({schema})", expanded=True):
         try:
             for t in list_tables(schema):
                 st.write(f"• {t}")
@@ -129,25 +157,18 @@ with st.sidebar:
         st.rerun()
 
 # ------------------------------------------------------------------- main page
-st.title("🗄️ Ask your database")
-st.caption(
-    f"Querying **{SCHEMAS[schema]}** ({schema}). Type a question in plain English. "
-    "The app writes SQL, runs it, and explains the result."
-)
+st.caption("Type a question in plain English. The app writes SQL, runs it, and explains the result.")
 
 # This schema's conversation; switching the dropdown switches the conversation.
 history = st.session_state.histories.setdefault(schema, [])
 
-# Example questions (clicking one would fill the input)
+# Example questions for the selected schema; clicking one asks it.
+clicked = None
 st.write("**Try:**")
-cols = st.columns(3)
-examples = [
-    "How many athletes are in the database?",
-    "Which countries have the most athletes?",
-    "Which tables are in the OLYM schema?",
-]
-for col, example in zip(cols, examples):
-    col.button(example, width='stretch', disabled=True)  # TODO: enable
+with st.container(horizontal=True):  # chips sized to their text; they wrap on narrow screens
+    for i, example in enumerate(SAMPLE_QUESTIONS[schema]):
+        if st.button(example, key=f"example_{schema}_{i}", width="content"):
+            clicked = example
 
 st.divider()
 
@@ -159,7 +180,7 @@ for turn in history:
         st.write(turn["answer"])
 
 # Input
-question = st.chat_input(f"Ask a question about {SCHEMAS[schema]}...")
+question = st.chat_input(f"Ask a question about {SCHEMAS[schema].lower()}...") or clicked
 
 if question:
     with st.chat_message("user"):

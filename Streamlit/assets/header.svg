@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 200" role="img" aria-label="Natural language database queries">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="0.4">
+      <stop offset="0" stop-color="#0b1f3a"/>
+      <stop offset="1" stop-color="#1c5cab"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.86" cy="0.5" r="0.45">
+      <stop offset="0" stop-color="#3987e5" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#3987e5" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1600" height="200" fill="url(#bg)"/>
+  <rect width="1600" height="200" fill="url(#glow)"/>
+
+  <!-- title and tagline -->
+  <!-- textLength pins each line to the width it has in Segoe UI, so a wider fallback
+       font on another machine is squeezed to fit instead of running into the icons -->
+  <text x="64" y="98" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+        font-size="52" font-weight="700" fill="#ffffff"
+        textLength="851" lengthAdjust="spacingAndGlyphs">Natural language database queries</text>
+  <text x="66" y="144" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+        font-size="22" fill="#b7d3f6"
+        textLength="576" lengthAdjust="spacingAndGlyphs">Ask in plain English. Get the SQL, the results and an answer.</text>
+
+  <!-- question (chat bubble) -> answer (database) -->
+  <g fill="none" stroke="#9ec5f4" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="1180" y="58" width="124" height="78" rx="18" fill="#ffffff" fill-opacity="0.08"/>
+    <path d="M1204 136 L1196 160 L1228 136"/>
+    <path d="M1404 70 v68 a46 14 0 0 0 92 0 v-68" fill="#ffffff" fill-opacity="0.08"/>
+    <ellipse cx="1450" cy="70" rx="46" ry="14" fill="#ffffff" fill-opacity="0.14"/>
+    <path d="M1404 96 a46 14 0 0 0 92 0"/>
+    <path d="M1404 118 a46 14 0 0 0 92 0"/>
+  </g>
+  <g fill="#9ec5f4">
+    <circle cx="1214" cy="97" r="6"/>
+    <circle cx="1242" cy="97" r="6"/>
+    <circle cx="1270" cy="97" r="6"/>
+  </g>
+  <g fill="none" stroke="#1baf7a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="1328" y1="98" x2="1382" y2="98"/>
+    <polyline points="1368,84 1383,98 1368,112"/>
+  </g>
+</svg>
