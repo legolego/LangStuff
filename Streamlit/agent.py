@@ -577,10 +577,64 @@ def build_graph(run_query: Callable[..., pd.DataFrame]):
 
     # -------------------------------------------------------------------------
     # 4. WIRING: nodes + edges, then compile.
+    #
+    # This is the graph the calls below build. The numbers (1) to (6) match the
+    # comments on the add_edge calls, so you can read the picture and the code side
+    # by side.
+    #
+    #          START
+    #            |
+    #            | (1)
+    #            v
+    #     +--------------+
+    #     |  get_schema  |
+    #     +--------------+
+    #            |
+    #            | (2)
+    #            v
+    #     +--------------+
+    #     |  write_sql   |
+    #     +--------------+
+    #            |
+    #            | (3)
+    #            v
+    #     +--------------+
+    #     |   run_sql    |
+    #     +--------------+
+    #            |
+    #            | (4)  after_run() returns the name of the next node:
+    #            |
+    #            +--- "write_sql" ----------> back to write_sql
+    #            |                            (the SQL failed, retries left)
+    #            |
+    #            +--- "lookup_values"          (it found nothing, retries left)
+    #            |           |
+    #            |           v
+    #            |    +---------------+
+    #            |    | lookup_values |
+    #            |    +---------------+
+    #            |           |
+    #            |           | (5)  back to write_sql
+    #            |
+    #            +--- "answer"                 (a good result, or no retries left)
+    #                        |
+    #                        v
+    #                 +--------------+
+    #                 |    answer    |
+    #                 +--------------+
+    #                        |
+    #                        | (6)
+    #                        v
+    #                       END
+    #
+    # In all: 5 nodes and 5 fixed arrows, (1) (2) (3) (5) (6), plus the one branch (4)
+    # with three possible targets, which makes 8 arrows. The only loops are the two
+    # that lead back to write_sql. They share the retry budget (MAX_RETRIES), so the
+    # graph always reaches END.
     # -------------------------------------------------------------------------
     g = StateGraph(State)
 
-    # Register each node under the name used in the diagram at the top of this file.
+    # Register each node under the name used in the diagrams.
     g.add_node("get_schema", get_schema)
     g.add_node("write_sql", write_sql)
     g.add_node("run_sql", run_sql)
@@ -588,12 +642,14 @@ def build_graph(run_query: Callable[..., pd.DataFrame]):
     g.add_node("answer", answer)
 
     # Fixed arrows: the next node is always the same.
-    g.add_edge(START, "get_schema")
-    g.add_edge("get_schema", "write_sql")
-    g.add_edge("write_sql", "run_sql")
+    g.add_edge(START, "get_schema")  # (1)
+    g.add_edge("get_schema", "write_sql")  # (2)
+    g.add_edge("write_sql", "run_sql")  # (3)
     # The branching arrow: after run_sql, after_run() returns the name of one of the
     # three listed nodes. (The list is only so LangGraph can draw and validate the graph.)
-    g.add_conditional_edges("run_sql", after_run, ["write_sql", "lookup_values", "answer"])
-    g.add_edge("lookup_values", "write_sql")
-    g.add_edge("answer", END)
+    g.add_conditional_edges("run_sql", after_run, ["write_sql", "lookup_values", "answer"])  # (4)
+    g.add_edge("lookup_values", "write_sql")  # (5)
+    g.add_edge("answer", END)  # (6)
+    # compile() checks the graph is well formed (for example that every edge points at a
+    # node that exists) and returns the runnable agent: the picture above.
     return g.compile()

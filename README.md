@@ -24,7 +24,9 @@ that was used, the result table, and a trace of the agent's steps.
 
 The agent is a small LangGraph graph with two kinds of retry. Each box is a node,
 each line is an edge. The same diagram, with a table of what each node reads and
-writes, is at the top of `Streamlit/agent.py`.
+writes, is at the top of `Streamlit/agent.py`. A numbered version sits next to the
+wiring code at the bottom of `build_graph()`, so each arrow lines up with the
+`add_edge` call that creates it.
 
 ```
         START
