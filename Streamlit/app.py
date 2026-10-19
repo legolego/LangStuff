@@ -19,7 +19,11 @@ from history_nav import history_nav_html
 agent = importlib.reload(agent)
 from agent import MODEL_NAME, ROW_LIMIT, build_graph  # noqa: E402
 
-st.set_page_config(page_title="Ask the database", page_icon="🗄️", layout="wide")
+st.set_page_config(
+    page_title="Ask the database",
+    page_icon=str(Path(__file__).resolve().parent / "assets" / "favicon.svg"),  # the graph icon
+    layout="wide",
+)
 
 # FreeSQL sample schemas: owner code -> display name
 SCHEMAS = {
