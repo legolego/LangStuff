@@ -110,9 +110,70 @@ def get_graph(agent_mtime: float):
             pass
     return build_graph(run_query)
 
+# ------------------------------------------------------- one answer, drawn as tabs
+def summarise_step(node: str, update: dict) -> dict:
+    """The part of one agent step worth keeping for the Agent trace tab.
+
+    Kept small on purpose: the result table is stored once per answer, not once per step.
+    """
+    step = {"node": node}
+    if node == "write_sql":
+        step.update(sql=update["sql"], attempts=update["attempts"])
+    elif node == "run_sql":
+        step.update(
+            error=update.get("error", ""),
+            no_rows=update.get("no_rows", False),
+            rows=len(update["df"]) if "df" in update else None,
+        )
+    elif node == "lookup_values":
+        step.update(hints=update.get("hints", ""))
+    return step
+
+
+def render_turn(turn: dict) -> None:
+    """Draw one answer as four tabs: answer, SQL, results and agent trace.
+
+    Used for the answer being worked out now and for every earlier answer in the
+    conversation, so they all look the same. A turn is a dict with the keys
+    answer, sql, df, error and steps; missing keys are tolerated.
+    """
+    tab_answer, tab_sql, tab_data, tab_trace = st.tabs(
+        ["💬 Answer", "🧾 SQL", "📊 Results", "🕸️ Agent trace"]
+    )
+    with tab_answer:
+        st.write(turn["answer"])
+    with tab_sql:
+        st.code(turn.get("sql", ""), language="sql")
+    with tab_data:
+        if turn.get("error"):
+            st.error(turn["error"])
+        elif turn.get("df") is not None:
+            st.dataframe(turn["df"], width="stretch")
+        else:
+            st.caption("No result table was kept for this answer.")
+    with tab_trace:
+        steps = turn.get("steps", [])
+        st.write(" → ".join(s["node"] for s in steps) or "No trace was kept for this answer.")
+        for s in steps:
+            if s["node"] == "write_sql":
+                st.caption(f"write_sql, attempt {s['attempts']}")
+                st.code(s["sql"], language="sql")
+            elif s["node"] == "run_sql":
+                if s["error"]:
+                    st.error(s["error"])
+                elif s["no_rows"]:
+                    st.warning("The query ran but found nothing (0 rows, or a count of 0).")
+                else:
+                    st.caption(f"run_sql: {s['rows']} rows")
+            elif s["node"] == "lookup_values" and s["hints"]:
+                st.caption("lookup_values: real values from the database")
+                st.code(s["hints"], language="text")
+
+
 # ---------------------------------------------------------------- session state
 if "histories" not in st.session_state:
-    st.session_state.histories = {}  # schema code -> list of {"question", "answer"}
+    # schema code -> list of turns: {"question", "answer", "sql", "df", "error", "steps"}
+    st.session_state.histories = {}
 
 # ------------------------------------------------------------------ banner
 st.image(str(Path(__file__).resolve().parent / "assets" / "header.svg"), width="stretch")
@@ -179,7 +240,7 @@ for turn in history:
     with st.chat_message("user"):
         st.write(turn["question"])
     with st.chat_message("assistant"):
-        st.write(turn["answer"])
+        render_turn(turn)  # the same four tabs as when the answer first appeared
 
 # Input: the chat box with the clear button to its right, pinned to the bottom of the page.
 with st.bottom:
@@ -203,46 +264,28 @@ if question:
         st.write(question)
 
     with st.chat_message("assistant"):
-        final, trace, log = {}, [], []
+        final, steps = {}, []
         with st.status("Thinking...", expanded=True) as status:
             for step in get_graph(AGENT_FILE.stat().st_mtime).stream({"question": question, "schema": schema}, stream_mode="updates"):
                 for node, update in step.items():
-                    trace.append(node)
-                    log.append((node, update))  # keep every step, not just the merged result
+                    steps.append(summarise_step(node, update))  # every step, for the trace tab
                     st.write(f"✅ {node}")
                     final.update(update)  # merge each node's changes into one dict
             status.update(label="Done", state="complete")
 
-        tab_answer, tab_sql, tab_data, tab_trace = st.tabs(
-            ["💬 Answer", "🧾 SQL", "📊 Results", "🕸️ Agent trace"]
-        )
-        with tab_answer:
-            st.write(final["answer"])
-        with tab_sql:
-            st.code(final.get("sql", ""), language="sql")
-        with tab_data:
-            if final.get("error"):
-                st.error(final["error"])
-            else:
-                st.dataframe(final["df"], width='stretch')
-        with tab_trace:
-            st.write(" → ".join(trace))
-            for node, update in log:
-                if node == "write_sql":
-                    st.caption(f"write_sql, attempt {update['attempts']}")
-                    st.code(update["sql"], language="sql")
-                elif node == "run_sql":
-                    if update.get("error"):
-                        st.error(update["error"])
-                    elif update.get("no_rows"):
-                        st.warning("The query ran but found nothing (0 rows, or a count of 0).")
-                    else:
-                        st.caption(f"run_sql: {len(update['df'])} rows")
-                elif node == "lookup_values" and update.get("hints"):
-                    st.caption("lookup_values: real values from the database")
-                    st.code(update["hints"], language="text")
+        # Everything the four tabs need, kept with the conversation so earlier answers
+        # keep their tabs after later questions (and after switching schema and back).
+        turn = {
+            "question": question,
+            "answer": final["answer"],
+            "sql": final.get("sql", ""),
+            "df": final.get("df"),
+            "error": final.get("error", ""),
+            "steps": steps,
+        }
+        render_turn(turn)
 
-    history.append({"question": question, "answer": final["answer"]})
+    history.append(turn)
 
 # Up/down arrows in the chat box recall earlier questions (this schema's only).
 # Rendered last so the list includes the question that was just asked.

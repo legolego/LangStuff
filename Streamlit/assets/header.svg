@@ -21,7 +21,7 @@
         textLength="851" lengthAdjust="spacingAndGlyphs">Natural language database queries</text>
   <text x="66" y="144" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
         font-size="22" fill="#b7d3f6"
-        textLength="576" lengthAdjust="spacingAndGlyphs">Ask in plain English. Get the SQL, the results and an answer.</text>
+        textLength="581" lengthAdjust="spacingAndGlyphs">Ask in plain English. Get the SQL, the results, and an answer.</text>
 
   <!-- question (chat bubble) -> answer (database) -->
   <g fill="none" stroke="#9ec5f4" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">

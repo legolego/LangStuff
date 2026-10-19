@@ -148,6 +148,22 @@ SCHEMA_NOTES = {
         "Only when asked how many ATHLETES won something, count distinct athletes. The data "
         "contains only Summer Games, so a question about a Winter Games has no answer."
     ),
+    "HR": (
+        "Employee names are split into FIRST_NAME and LAST_NAME; to match a full name use "
+        "UPPER(FIRST_NAME || ' ' || LAST_NAME) LIKE '%...%'. SALARY is a MONTHLY amount in this "
+        "data, so say 'per month' when quoting it, and multiply by 12 only if asked for annual "
+        "pay. MANAGER_ID points at another row of EMPLOYEES (use a self-join to reach a "
+        "manager). DEPARTMENT_ID and COMMISSION_PCT can be NULL, so use a LEFT JOIN when "
+        "employees without a department matter."
+    ),
+    "CO": (
+        "ORDERS.ORDER_STATUS is COMPLETE, CANCELLED or REFUNDED. Unless the question asks "
+        "about cancelled or refunded orders, count only COMPLETE orders for sales, revenue and "
+        "order counts. An order's revenue is the sum of ORDER_ITEMS.UNIT_PRICE * "
+        "ORDER_ITEMS.QUANTITY (the price paid at the time), not PRODUCTS.UNIT_PRICE. Customer "
+        "names are in CUSTOMERS.FULL_NAME. This is sample data from a fixed period, so do not "
+        "use SYSDATE for 'recent' or 'last year'."
+    ),
 }
 
 # Size limits that keep prompts and queries sane.
@@ -516,6 +532,8 @@ def build_graph(run_query: Callable[..., pd.DataFrame]):
             "Always include the actual numbers from the result: for a count or total, state the "
             "number; for a ranking or 'who/which' question, name the top results (up to 5) each "
             "with its number, for example 'Michael Phelps (23)'. "
+            "Write numbers without currency symbols (no $, €, £), even for prices, salaries or "
+            "revenue; you may name a unit in words, for example 'per month'. "
             "Say exactly what was counted (for example medal events, not individual athletes)."
         )
         # Still nothing after all the retries: do not report "zero" as a fact.
