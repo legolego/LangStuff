@@ -5,7 +5,7 @@ A LangGraph text-to-SQL agent (`Streamlit/agent.py`) with a Streamlit front end
 
 ## Keep the graph documentation in sync with the code
 
-The agent's graph is documented by hand in three places. Whenever you add, remove or
+The agent's graph is documented by hand in four places. Whenever you add, remove or
 rename a node or an arrow, add a `State` key, or change what a node reads or writes,
 update **all** of them in the same change:
 
@@ -17,6 +17,11 @@ update **all** of them in the same change:
    ("N nodes and N fixed arrows ... which makes N arrows").
 3. **`README.md`, "How the agent works"**: the diagram, the numbered list of steps, and
    the retry count if `MAX_RETRIES` changed.
+4. **`Streamlit/assets/header.svg`**: the banner draws the graph (the five nodes, START
+   and END, the main flow, and the two retry loops). Change the nodes and arrows there
+   too. Each label's `textLength` is its width measured in Segoe UI, so if you rename a
+   node or change a font size, measure the new text (for example with `getComputedTextLength()`
+   in the browser) and resize the box to fit, then check nothing overlaps the title.
 
 Then check the pictures against the graph that is really built, and report which places
 you updated. From the project root:
@@ -26,7 +31,7 @@ cd Streamlit && GOOGLE_API_KEY=dummy ../.venv/Scripts/python.exe -c "import agen
 ```
 
 It prints the real nodes and arrows (`__start__` and `__end__` are START and END; arrows
-marked `True` are the ones out of the `run_sql` branch). Compare them with the three
+marked `True` are the ones out of the `run_sql` branch). Compare them with the four
 places above. If you changed what a node reads or writes, read its code to check the
 table, since the command does not show that.
 

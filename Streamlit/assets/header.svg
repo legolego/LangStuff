@@ -1,13 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 200" role="img" aria-label="Natural language database queries">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 200" role="img"
+     aria-label="Natural language database queries. A diagram of the agent: get_schema, write_sql and run_sql, then either answer, or back to write_sql, directly or by way of lookup_values, to retry.">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="0.4">
       <stop offset="0" stop-color="#0b1f3a"/>
       <stop offset="1" stop-color="#1c5cab"/>
     </linearGradient>
-    <radialGradient id="glow" cx="0.86" cy="0.5" r="0.45">
+    <radialGradient id="glow" cx="0.78" cy="0.5" r="0.4">
       <stop offset="0" stop-color="#3987e5" stop-opacity="0.45"/>
       <stop offset="1" stop-color="#3987e5" stop-opacity="0"/>
     </radialGradient>
+    <!-- arrowheads, one per arrow colour (markers cannot inherit the line colour reliably) -->
+    <marker id="headBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="12" markerHeight="12"
+            markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="#9ec5f4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="headGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="12" markerHeight="12"
+            markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="#1baf7a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="headOrange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="12" markerHeight="12"
+            markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="#f08a5d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
   </defs>
 
   <rect width="1600" height="200" fill="url(#bg)"/>
@@ -15,30 +29,50 @@
 
   <!-- title and tagline -->
   <!-- textLength pins each line to the width it has in Segoe UI, so a wider fallback
-       font on another machine is squeezed to fit instead of running into the icons -->
-  <text x="64" y="98" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
-        font-size="52" font-weight="700" fill="#ffffff"
-        textLength="851" lengthAdjust="spacingAndGlyphs">Natural language database queries</text>
-  <text x="66" y="144" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+       font on another machine is squeezed to fit instead of running into the graph -->
+  <text x="64" y="95" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+        font-size="44" font-weight="700" fill="#ffffff"
+        textLength="720" lengthAdjust="spacingAndGlyphs">Natural language database queries</text>
+  <text x="66" y="142" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
         font-size="22" fill="#b7d3f6"
         textLength="581" lengthAdjust="spacingAndGlyphs">Ask in plain English. Get the SQL, the results, and an answer.</text>
 
-  <!-- question (chat bubble) -> answer (database) -->
-  <g fill="none" stroke="#9ec5f4" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="1180" y="58" width="124" height="78" rx="18" fill="#ffffff" fill-opacity="0.08"/>
-    <path d="M1204 136 L1196 160 L1228 136"/>
-    <path d="M1404 70 v68 a46 14 0 0 0 92 0 v-68" fill="#ffffff" fill-opacity="0.08"/>
-    <ellipse cx="1450" cy="70" rx="46" ry="14" fill="#ffffff" fill-opacity="0.14"/>
-    <path d="M1404 96 a46 14 0 0 0 92 0"/>
-    <path d="M1404 118 a46 14 0 0 0 92 0"/>
+  <!-- THE AGENT GRAPH (Streamlit/agent.py). This picture is one of the places the graph is
+       drawn by hand: if a node or an arrow changes there, change it here too (see CLAUDE.md).
+       Blue = the main flow, orange = the two retry loops, green = the way out to the answer. -->
+
+  <!-- arrows along the top row: START > get_schema > write_sql > run_sql > answer > END -->
+  <g fill="none" stroke-width="3" stroke-linecap="round">
+    <path d="M889 76 H918" stroke="#9ec5f4" marker-end="url(#headBlue)"/>
+    <path d="M1059 76 H1091" stroke="#9ec5f4" marker-end="url(#headBlue)"/>
+    <path d="M1204 76 H1236" stroke="#9ec5f4" marker-end="url(#headBlue)"/>
+    <path d="M1334 76 H1366" stroke="#1baf7a" marker-end="url(#headGreen)"/>
+    <path d="M1463 76 H1495" stroke="#1baf7a" marker-end="url(#headGreen)"/>
+    <!-- retry 1: run_sql back to write_sql when the SQL failed -->
+    <path d="M1280 56 C1280 18 1170 18 1170 53" stroke="#f08a5d" marker-end="url(#headOrange)"/>
+    <!-- retry 2: run_sql down to lookup_values when it found nothing, then back up to write_sql -->
+    <path d="M1275 98 V124" stroke="#f08a5d" marker-end="url(#headOrange)"/>
+    <path d="M1180 126 V100" stroke="#f08a5d" marker-end="url(#headOrange)"/>
   </g>
-  <g fill="#9ec5f4">
-    <circle cx="1214" cy="97" r="6"/>
-    <circle cx="1242" cy="97" r="6"/>
-    <circle cx="1270" cy="97" r="6"/>
+
+  <!-- START and END -->
+  <circle cx="877" cy="76" r="9" fill="#9ec5f4"/>
+  <circle cx="1510" cy="76" r="11" fill="none" stroke="#1baf7a" stroke-width="3"/>
+  <circle cx="1510" cy="76" r="5" fill="#1baf7a"/>
+
+  <!-- the five nodes -->
+  <g stroke-width="2.5">
+    <rect x="922" y="56" width="137" height="40" rx="10" fill="#ffffff" fill-opacity="0.08" stroke="#9ec5f4"/>
+    <rect x="1095" y="56" width="109" height="40" rx="10" fill="#ffffff" fill-opacity="0.08" stroke="#9ec5f4"/>
+    <rect x="1240" y="56" width="94" height="40" rx="10" fill="#ffffff" fill-opacity="0.08" stroke="#9ec5f4"/>
+    <rect x="1370" y="56" width="93" height="40" rx="10" fill="#1baf7a" fill-opacity="0.14" stroke="#1baf7a"/>
+    <rect x="1139" y="128" width="159" height="40" rx="10" fill="#f08a5d" fill-opacity="0.14" stroke="#f08a5d"/>
   </g>
-  <g fill="none" stroke="#1baf7a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
-    <line x1="1328" y1="98" x2="1382" y2="98"/>
-    <polyline points="1368,84 1383,98 1368,112"/>
+  <g font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="21" text-anchor="middle">
+    <text x="990.5" y="83" fill="#e6f0fc" textLength="109" lengthAdjust="spacingAndGlyphs">get_schema</text>
+    <text x="1149.5" y="83" fill="#e6f0fc" textLength="81" lengthAdjust="spacingAndGlyphs">write_sql</text>
+    <text x="1287" y="83" fill="#e6f0fc" textLength="66" lengthAdjust="spacingAndGlyphs">run_sql</text>
+    <text x="1416.5" y="83" fill="#d6f5e9" textLength="65" lengthAdjust="spacingAndGlyphs">answer</text>
+    <text x="1218.5" y="155" fill="#ffe3d5" textLength="131" lengthAdjust="spacingAndGlyphs">lookup_values</text>
   </g>
 </svg>
