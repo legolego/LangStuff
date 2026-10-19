@@ -1,8 +1,13 @@
+[![Natural language database queries: the agent's graph](Streamlit/assets/header.svg)](https://langstuff.streamlit.app/)
+
 # LangStuff
 
 A learning project for LangChain and LangGraph. It starts with the basics in a
 notebook and builds up to a Streamlit app where you ask an Oracle database
 questions in plain English.
+
+**Live app:** <https://langstuff.streamlit.app/> (hosted on Streamlit Community Cloud;
+you may be asked to sign in)
 
 ## What's in here
 
