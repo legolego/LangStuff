@@ -1,0 +1,109 @@
+id,schema,kind,run,question,attempts,seconds,error,sql,answer,answer_ok,data_ok,correct
+O1,OLYM,answerable,1,Which city hosted the 1948 Olympics?,1,9.4,,SELECT OLYM.OLYM_GAMES.CITY FROM OLYM.OLYM_GAMES WHERE OLYM.OLYM_GAMES.YEAR = 1948,The 1948 Olympics were hosted by the city of London.,True,True,True
+O2,OLYM,answerable,1,How many Olympic Games are in the database?,1,7.7,,SELECT COUNT(DISTINCT OLYM.OLYM_GAMES.ID) AS OLYMPIC_GAMES_COUNT FROM OLYM.OLYM_GAMES,"Based on the database, there are 26 Olympic Games recorded. This total reflects the number of distinct Olympic Games events counted.",True,True,True
+O3,OLYM,answerable,1,In which years was the Olympics held in Los Angeles?,1,8.2,,SELECT DISTINCT OLYM.OLYM_GAMES.YEAR AS YEAR FROM OLYM.OLYM_GAMES WHERE UPPER(OLYM.OLYM_GAMES.CITY) LIKE '%LOS ANGELES%',The Olympics were held in Los Angeles in the years 1932 and 1984.,True,True,True
+O4,OLYM,answerable,1,What is the most recent Olympic year in the database?,1,8.9,,SELECT MAX(YEAR) AS MOST_RECENT_YEAR FROM OLYM.OLYM_GAMES,"Based on the database, the most recent Olympic year is 2008.",True,True,True
+O5,OLYM,answerable,1,How many Olympic Games were held between 1900 and 1999?,1,7.5,,SELECT COUNT(DISTINCT OLYM.OLYM_GAMES.ID) AS OLYMPIC_GAMES_COUNT FROM OLYM.OLYM_GAMES WHERE OLYM.OLYM_GAMES.YEAR BETWEEN 1900 AND 1999,"Between 1900 and 1999, there were a total of 22 Olympic Games held. This count includes all the editions of the Olympic Games that took place during the 20th century.",True,True,True
+O6,OLYM,answerable,1,How many gold medals did the USA win at the 1984 Olympics?,1,8.3,,"SELECT COUNT(DISTINCT t2.game_id || '|' || t3.base_event_id || '|' || t3.id) AS GOLD_MEDALS 
+FROM OLYM.OLYM_NATIONS t1 
+JOIN OLYM.OLYM_ATHLETE_GAMES t2 ON t1.id = t2.nation_id 
+JOIN OLYM.OLYM_MEDALS t4 ON t2.id = t4.athlete_game_id 
+JOIN OLYM.OLYM_EVENTS t3 ON t4.event_id = t3.id 
+JOIN OLYM.OLYM_GAMES t5 ON t2.game_id = t5.id 
+WHERE UPPER(t1.nation) LIKE '%USA%' 
+  AND t5.year = 1984 
+  AND UPPER(t4.medal) LIKE '%GOLD%'","At the 1984 Olympics, the USA won a total of 82 gold medals. This count represents the distinct gold-winning events achieved by the nation's athletes during the Games.",True,True,True
+O7,OLYM,answerable,1,How many gold medals did the Soviet Union win at the 1980 Olympics?,4,20.6,,"SELECT COUNT(DISTINCT t2.GAME_ID || '|' || t4.BASE_EVENT_ID || '|' || t1.EVENT_ID) AS GOLD_MEDALS
+FROM OLYM.OLYM_MEDALS t1
+JOIN OLYM.OLYM_ATHLETE_GAMES t2 ON t1.ATHLETE_GAME_ID = t2.ID
+JOIN OLYM.OLYM_GAMES t3 ON t2.GAME_ID = t3.ID
+JOIN OLYM.OLYM_EVENTS t4 ON t1.EVENT_ID = t4.ID
+JOIN OLYM.OLYM_NATIONS t5 ON t2.NATION_ID = t5.ID
+WHERE UPPER(t1.MEDAL) = 'GOLD'
+  AND t3.YEAR = 1980
+  And UPPER(t5.NATION) = 'URS'",The Soviet Union won 80 gold medals at the 1980 Olympics. This count represents the total number of gold-winning medal events achieved by the nation during those games.,True,True,True
+O8,OLYM,answerable,1,How many gold medals did Great Britain win at the 2008 Olympics?,3,17.2,,"SELECT COUNT(DISTINCT T1.GAME_ID || '|' || T3.BASE_EVENT_ID || '|' || T3.EVENT_GENDER) AS GOLD_MEDALS
+FROM OLYM.OLYM_ATHLETE_GAMES T1
+JOIN OLYM.OLYM_MEDALS T2 ON T1.ID = T2.ATHLETE_GAME_ID
+JOIN OLYM.OLYM_EVENTS T3 ON T2.EVENT_ID = T3.ID
+JOIN OLYM.OLYM_NATIONS T4 ON T1.NATION_ID = T4.ID
+JOIN OLYM.OLYM_GAMES T5 ON T1.GAME_ID = T5.ID
+WHERE T4.NATION = 'GBR'
+  AND T5.YEAR = 2008
+  AND T2.MEDAL = 'Gold'",Great Britain won 19 gold medal events at the 2008 Olympics. This count reflects the total number of gold medals achieved by the nation's athletes during those Games.,True,True,True
+O9,OLYM,answerable,1,How many gold medals did Michael Phelps win at the 2008 Olympics?,2,12.1,,"SELECT COUNT(DISTINCT T1.EVENT_ID || '|' || T2.GAME_ID || '|' || T2.ATHLETE_ID) AS GOLD_MEDALS
+FROM OLYM.OLYM_MEDALS T1
+JOIN OLYM.OLYM_ATHLETE_GAMES T2 ON T1.ATHLETE_GAME_ID = T2.ID
+JOIN OLYM.OLYM_ATHLETES T3 ON T2.ATHLETE_ID = T3.ID
+JOIN OLYM.OLYM_GAMES T4 ON T2.GAME_ID = T4.ID
+WHERE UPPER(T3.ATHLETE_NAME) LIKE '%PHELPS, MICHAEL%'
+  AND T4.YEAR = 2008
+  AND UPPER(T1.MEDAL) = 'GOLD'","At the 2008 Olympics, Michael Phelps won a total of 8 gold medals. This count represents the distinct medal events in which he achieved first place during those games.",True,True,True
+O10,OLYM,answerable,1,"Which woman has won the most gold medals, and how many?",2,12.3,,"SELECT ATHLETE, GOLD_MEDALS
+FROM (
+    SELECT ATHLETE, COUNT(DISTINCT EDITION || '|' || SPORT || '|' || DISCIPLINE || '|' || EVENT || '|' || EVENT_GENDER) AS GOLD_MEDALS
+    FROM OLYM.OLYM_MEDALS_VIEW
+    WHERE UPPER(GENDER) = 'WOMEN' AND UPPER(MEDAL) = 'GOLD'
+    GROUP BY ATHLETE
+    ORDER BY GOLD_MEDALS DESC
+)
+WHERE ROWNUM <= 5","The woman who has won the most gold medal events is Larisa Latynina with 9 gold medals. Other top female gold medalists include Birgit Fischer (8), Jenny Thompson (8), Vera Caslavska (7), and Amy Van Dyken (6).",True,True,True
+H1,HR,answerable,1,How many employees are there?,1,8.0,,SELECT COUNT(*) AS EMPLOYEE_COUNT FROM HR.EMPLOYEES,There are 107 employees in total. This count is based on the records in the HR employees table.,True,True,True
+H2,HR,answerable,1,What is the highest salary?,1,8.0,,"SELECT MAX(HR.EMPLOYEES.SALARY) AS HIGHEST_SALARY
+FROM HR.EMPLOYEES",The highest salary in the employees table is 24000.,True,True,True
+H3,HR,answerable,1,How many employees work in the Shipping department?,1,8.1,,"SELECT COUNT(HR.EMPLOYEES.EMPLOYEE_ID) AS EMPLOYEE_COUNT
+FROM HR.EMPLOYEES
+LEFT JOIN HR.DEPARTMENTS ON HR.EMPLOYEES.DEPARTMENT_ID = HR.DEPARTMENTS.DEPARTMENT_ID
+WHERE UPPER(HR.DEPARTMENTS.DEPARTMENT_NAME) LIKE '%SHIPPING%'",There are 45 employees who work in the Shipping department.,True,True,True
+H4,HR,answerable,1,How many departments are there?,1,8.0,,SELECT COUNT(*) AS NUMBER_OF_DEPARTMENTS FROM HR.DEPARTMENTS,There are 27 departments in the HR schema.,True,True,True
+H5,HR,answerable,1,What is the average salary in the IT department?,1,8.4,,SELECT AVG(HR.EMPLOYEES.SALARY) AS AVERAGE_SALARY FROM HR.EMPLOYEES JOIN HR.DEPARTMENTS ON HR.EMPLOYEES.DEPARTMENT_ID = HR.DEPARTMENTS.DEPARTMENT_ID WHERE UPPER(HR.DEPARTMENTS.DEPARTMENT_NAME) LIKE '%IT%',The average salary in the IT department is 5760.,True,True,True
+H6,HR,answerable,1,"Which department has the most employees, and how many?",1,8.1,,"SELECT D.DEPARTMENT_NAME, COUNT(E.EMPLOYEE_ID) AS NUMBER_OF_EMPLOYEES
+FROM HR.DEPARTMENTS D
+LEFT JOIN HR.EMPLOYEES E ON D.DEPARTMENT_ID = E.DEPARTMENT_ID
+GROUP BY D.DEPARTMENT_ID, D.DEPARTMENT_NAME
+ORDER BY NUMBER_OF_EMPLOYEES DESC","The department with the most employees is Shipping, with 45 employees. The Sales department follows with 34 employees.",True,True,True
+H7,HR,answerable,1,How many employees have no department?,1,8.5,,SELECT COUNT(*) AS EMPLOYEES_WITHOUT_DEPARTMENT FROM HR.EMPLOYEES WHERE DEPARTMENT_ID IS NULL,There is 1 employee who has no department.,True,True,True
+H8,HR,answerable,1,How many different jobs are there?,1,8.1,,SELECT COUNT(DISTINCT HR.JOBS.JOB_ID) AS DIFFERENT_JOBS FROM HR.JOBS,There are 19 different jobs. This count reflects the total number of unique job IDs available in the database.,True,True,True
+H9,HR,answerable,1,Which employees earn more than their manager?,1,7.6,,"SELECT e.employee_id, e.first_name, e.last_name, e.salary AS employee_salary, m.salary AS manager_salary FROM hr.employees e JOIN hr.employees m ON e.manager_id = m.employee_id WHERE e.salary > m.salary","Two employees earn more than their managers. Lisa Ozer (11500.0) earns more than her manager (11000.0), and Ellen Abel (11000.0) earns more than her manager (10500.0).",True,True,True
+H10,HR,answerable,1,"Which department has the highest average salary, and what is it?",1,8.3,,"SELECT TOP_DEPARTMENTS.DEPARTMENT_NAME, TOP_DEPARTMENTS.AVG_SALARY AS HIGHEST_AVERAGE_SALARY FROM (SELECT HR.DEPARTMENTS.DEPARTMENT_NAME, AVG(HR.EMPLOYEES.SALARY) AS AVG_SALARY FROM HR.DEPARTMENTS JOIN HR.EMPLOYEES ON HR.DEPARTMENTS.DEPARTMENT_ID = HR.EMPLOYEES.DEPARTMENT_ID GROUP BY HR.DEPARTMENTS.DEPARTMENT_NAME ORDER BY AVG(HR.EMPLOYEES.SALARY) DESC) TOP_DEPARTMENTS WHERE ROWNUM <= 5","The department with the highest average salary is Executive with an average salary of 19,333.33. This is followed by Accounting at 10,154.0, Public Relations at 10,000.0, Marketing at 9,500.0, and Sales at 8,955.88.",True,True,True
+C1,CO,answerable,1,How many customers are there?,1,8.1,,SELECT COUNT(*) AS CUSTOMER_COUNT FROM CO.CUSTOMERS,There are 392 customers in total.,True,True,True
+C2,CO,answerable,1,How many stores are there?,1,8.0,,SELECT COUNT(STORE_ID) AS STORE_COUNT FROM CO.STORES,There are 23 stores in total.,True,True,True
+C3,CO,answerable,1,How many products are there?,1,8.1,,SELECT COUNT(*) AS PRODUCT_COUNT FROM CO.PRODUCTS,There are 46 products in total.,True,True,True
+C4,CO,answerable,1,"How many orders are there in total, including cancelled and refunded ones?",1,7.9,,"SELECT COUNT(*) AS TOTAL_ORDERS
+FROM CO.ORDERS","There are 1950 total orders in the system, which includes all orders regardless of whether they were cancelled or refunded.",True,True,True
+C5,CO,answerable,1,How many completed orders are there?,1,12.5,,"SELECT COUNT(*) AS COMPLETED_ORDERS
+FROM CO.ORDERS
+WHERE ORDER_STATUS = 'COMPLETE'","There are 1,892 completed orders in the database. This total represents all orders that currently have a status of complete.",True,True,True
+C6,CO,answerable,1,How many orders were cancelled?,1,5.0,,"SELECT COUNT(*) AS CANCELLED_ORDERS
+FROM CO.ORDERS
+WHERE UPPER(ORDER_STATUS) LIKE '%CANCELLED%'",There were 35 cancelled orders.,True,True,True
+C7,CO,answerable,1,How many orders were refunded?,1,7.9,,"SELECT COUNT(CO.ORDERS.ORDER_ID) AS REFUNDED_ORDERS
+FROM CO.ORDERS
+WHERE UPPER(CO.ORDERS.ORDER_STATUS) LIKE '%REFUNDED%'",There were 23 orders that were refunded.,True,True,True
+C8,CO,answerable,1,What are the five best-selling products by revenue?,1,8.4,,"SELECT P.PRODUCT_NAME, SUM(OI.UNIT_PRICE * OI.QUANTITY) AS REVENUE
+FROM CO.PRODUCTS P
+JOIN CO.ORDER_ITEMS OI ON P.PRODUCT_ID = OI.PRODUCT_ID
+JOIN CO.ORDERS O ON OI.ORDER_ID = O.ORDER_ID
+WHERE O.ORDER_STATUS = 'COMPLETE'
+GROUP BY P.PRODUCT_ID, P.PRODUCT_NAME
+ORDER BY REVENUE DESC
+FETCH FIRST 5 ROWS ONLY","The five best-selling products by revenue from completed orders are Girl's Trousers (Red) with 15,520.64, Girl's Hoodie (White) with 13,893.75, Women's Trousers (Blue) with 11,936.16, Boy's Coat (Blue) with 10,815.61, and Girl's Pyjamas (White) with 10,811.88.",True,True,True
+C9,CO,answerable,1,"Which customer has placed the most orders, and how many?",1,8.1,,"SELECT c.FULL_NAME, COUNT(o.ORDER_ID) AS ORDER_COUNT
+FROM CO.CUSTOMERS c
+JOIN CO.ORDERS o ON c.CUSTOMER_ID = o.CUSTOMER_ID
+WHERE o.ORDER_STATUS = 'COMPLETE'
+GROUP BY c.CUSTOMER_ID, c.FULL_NAME
+ORDER BY ORDER_COUNT DESC",There is a tie for the customers who have placed the most completed orders: Shamira Jones and Kristina Livshits have each placed 11 orders.,True,True,True
+C10,CO,answerable,1,What is the total revenue from completed orders?,1,8.0,,"SELECT SUM(CO.ORDER_ITEMS.UNIT_PRICE * CO.ORDER_ITEMS.QUANTITY) AS TOTAL_REVENUE
+FROM CO.ORDERS
+JOIN CO.ORDER_ITEMS ON CO.ORDERS.ORDER_ID = CO.ORDER_ITEMS.ORDER_ID
+WHERE CO.ORDERS.ORDER_STATUS = 'COMPLETE'",The total revenue generated from all completed orders is 299889.62. This figure is calculated by multiplying the unit price and quantity of each item across all orders with a status of complete.,True,True,True
+OF1,OLYM,honest,1,How many gold medals did the USA win at the 1980 Winter Olympics?,1,7.8,,SELECT 'NOT IN DATABASE: Winter Olympics' AS NOTE FROM DUAL,The database does not contain information about the Winter Olympics.,,,True
+OF2,OLYM,honest,1,Who won the most gold medals at the 2024 Paris Olympics?,3,28.7,,SELECT 'NOT IN DATABASE: 2024 Paris Olympics' AS NOTE FROM DUAL,The database does not contain 2024 Paris Olympics.,,,True
+OF3,OLYM,honest,1,How many medals did Russia win at the 1984 Olympics?,1,8.1,,SELECT 'NOT IN DATABASE: Winter Games' AS NOTE FROM DUAL,"The database does not contain information on Winter Games. Therefore, the number of medals Russia won at the 1984 Olympics is not available.",,,True
+HF1,HR,honest,1,What is Steven King's home address?,1,8.1,,SELECT 'NOT IN DATABASE: home address' AS NOTE FROM DUAL,The database does not contain home address.,,,True
+HF2,HR,honest,1,What is the average performance rating of employees?,1,7.9,,SELECT 'NOT IN DATABASE: performance rating' AS NOTE FROM DUAL,The database does not contain performance rating.,,,True
+HF3,HR,honest,1,Which employees are on vacation right now?,1,8.6,,SELECT 'NOT IN DATABASE: vacation status' AS NOTE FROM DUAL,"The database does not contain vacation status. Therefore, the employees who are on vacation right now cannot be determined from the available data.",,,True
+CF1,CO,honest,1,What is the profit margin on each product?,1,7.8,,SELECT 'NOT IN DATABASE: profit margin' AS NOTE FROM DUAL,The database does not contain profit margin.,,,True
+CF2,CO,honest,1,What is the average customer satisfaction rating?,1,8.2,,SELECT 'NOT IN DATABASE: customer satisfaction rating' AS NOTE FROM DUAL,The database does not contain customer satisfaction rating.,,,True
+CF3,CO,honest,1,How many orders were placed in 2030?,4,21.3,,SELECT COUNT(*) AS ORDER_COUNT FROM CO.ORDERS WHERE EXTRACT(YEAR FROM ORDER_TMS) = 2030 AND ORDER_STATUS = 'COMPLETE',"The query looked for complete orders placed in 2030 and found 0 matching rows. As background knowledge, this year is in the future, so no data exists for it yet.",,,True

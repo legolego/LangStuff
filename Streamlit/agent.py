@@ -476,6 +476,11 @@ def build_graph(run_query: Callable[..., pd.DataFrame]):
             "the top 5 rows ordered by it descending, so the number, any ties and the "
             "runners-up are visible. Never rank by something that is not in the SELECT list, "
             "and do not use ROWNUM = 1 to return a single row.\n"
+            "Never answer with a stand-in for what was asked: if the question needs something "
+            "that no column above holds (for example a birth date when only a hire date "
+            "exists, or a delivery time when only an order date exists), do NOT build the "
+            "nearest-looking query. Instead return exactly "
+            "SELECT 'NOT IN DATABASE: <what is missing>' AS NOTE FROM DUAL\n"
             + (f"Notes about this data: {SCHEMA_NOTES[state['schema']]}\n" if state["schema"] in SCHEMA_NOTES else "")
             + f"Question: {state['question']}\n"
         )
@@ -631,6 +636,13 @@ def build_graph(run_query: Callable[..., pd.DataFrame]):
             "revenue; you may name a unit in words, for example 'per month'. "
             "Say exactly what was counted (for example medal events, not individual athletes)."
         )
+        # The SQL writer says so (see write_sql) when the data cannot answer the question.
+        if "NOT IN DATABASE" in csv_text.upper():
+            prompt += (
+                "\nThe result says the database does not hold what was asked. Say plainly that "
+                "the database does not contain it (use the words after 'NOT IN DATABASE'). "
+                "Do not guess, and do not offer a different number as if it answered the question."
+            )
         # Still nothing after all the retries: do not report "zero" as a fact.
         if state.get("no_rows"):  # still empty/zero after the retries
             prompt += (
