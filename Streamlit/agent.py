@@ -92,11 +92,12 @@ them together.
 """
 import numbers
 import re
+from collections import deque
 from typing import Callable, TypedDict
 
 import pandas as pd
 from langchain_core.rate_limiters import InMemoryRateLimiter
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain.chat_models import init_chat_model
 from langgraph.graph import END, START, StateGraph
 
 # =============================================================================
@@ -111,15 +112,40 @@ MODEL_NAME = "gemini-3.5-flash-lite"
 # (500 a day for MODEL_NAME on the free tier). Google answers that with a "quota exceeded,
 # per day" error; see is_daily_limit_error. The switch lasts until the agent is rebuilt,
 # which the app does when it restarts. Use [] to turn the fallback off.
-FALLBACK_MODELS = ["gemini-3.1-flash-lite"]
+FALLBACK_MODELS = ["gemini-3.1-flash-lite", "qwen/qwen3.8-27b", "openai/gpt-oss-120b"]
 
-# The peak number of requests per minute your API key allows for each model. The agent
-# spaces its model calls so it never goes over the limit of MODEL_NAME (see make_rate_limiter).
-# To switch models, change MODEL_NAME and make sure the new model has a line here; the
-# limit for your key is on Google's rate-limits page for the Gemini API.
-MODEL_REQUESTS_PER_MINUTE = {
-    "gemini-3.5-flash-lite": 15,
-    "gemini-3.1-flash-lite": 15,  # check this against Google's rate-limits page for your key
+# Everything the agent needs to know about each model it may use, keyed by model name:
+#   provider            which company runs it ("google_genai" or "groq"); the matching LangChain
+#                       package must be installed (see requirements.txt) and its key set in .env
+#   requests_per_minute the peak your API key allows. The agent spaces its calls so it never goes
+#                       over it (see make_rate_limiter). Check your key's rate-limits page.
+#   output_cap          what this provider calls the "longest reply" setting (see make_client)
+#   settings            optional extras passed to the model, for example a low reasoning effort
+# To use another model, add a line here, then put its name in MODEL_NAME or FALLBACK_MODELS.
+MODELS = {
+    "gemini-3.5-flash-lite": {
+        "provider": "google_genai",
+        "requests_per_minute": 15,
+        "output_cap": "max_output_tokens",
+    },
+    "gemini-3.1-flash-lite": {
+        "provider": "google_genai",
+        "requests_per_minute": 15,  # check this against Google's rate-limits page for your key
+        "output_cap": "max_output_tokens",
+    },
+    "openai/gpt-oss-120b": {  # needs GROQ_API_KEY in .env and `pip install langchain-groq`
+        "provider": "groq",
+        "requests_per_minute": 30,  # check this against the Limits page of your Groq account
+        "output_cap": "max_tokens",
+        "settings": {"reasoning_effort": "low", "max_retries": 6},  # short thinking; retry when a per-minute limit is hit
+    },
+    "qwen/qwen3.8-27b": {  # Groq as well: same key and package as gpt-oss
+        "provider": "groq",
+        "requests_per_minute": 30,  # check this against the Limits page of your Groq account
+        "output_cap": "max_tokens",
+        "max_output_tokens": 800,  # Groq allows only 1,000 output tokens a minute for this model
+        "settings": {"reasoning_effort": "none", "max_retries": 6},  # no thinking: saves tokens on the 8,000-a-minute limit
+    },
 }
 
 # How many times the agent may go back to write_sql after a bad result (an SQL error,
@@ -161,6 +187,12 @@ SCHEMA_NOTES = {
         "DISTINCT in a subquery. ALWAYS include the Games year or id in that distinct key: the "
         "same event is held at every Games, so leaving it out merges the same event won at "
         "different Games into one medal and undercounts anyone who won it more than once. "
+        "Worked example, the gold medals a country won at one Games (change the filters to fit "
+        "the question; NOC is the country's three-letter code, and MEDAL is 'Gold', 'Silver' or "
+        "'Bronze'): SELECT COUNT(DISTINCT edition || '|' || discipline || '|' || event || '|' || "
+        "event_gender) AS GOLD_MEDALS FROM OLYM.OLYM_MEDALS_VIEW WHERE medal = 'Gold' AND "
+        "noc = 'AUS' AND edition = 2000. For one person, or a ranking of people or countries, use "
+        "the same COUNT(DISTINCT ...) with GROUP BY athlete (or noc). "
         "Only when asked how many ATHLETES won something, count distinct athletes. The data "
         "contains only Summer Games, so a question about a Winter Games has no answer."
     ),
@@ -249,7 +281,23 @@ def check_rules(sql: str, schema: str) -> str:
             "missing from the result. Select it as a named column (for example "
             "COUNT(...) AS GOLD_MEDALS), ORDER BY that column DESC, and return the top 5 rows."
         )
-    # Rule 3 (Olympic data only): a distinct count over events must include the Games
+    # Rule 3: sorting DESC puts NULLs FIRST in Oracle. After a LEFT JOIN, the rows with
+    # nothing to join have a NULL total or average, so they would be ranked "highest".
+    # (COUNT is never NULL, so a count is fine.)
+    if (
+        re.search(r"\bLEFT\s+(?:OUTER\s+)?JOIN\b", sql, re.I)
+        and re.search(r"\b(?:AVG|SUM|MIN|MAX)\s*\(", sql, re.I)
+        and re.search(r"\bDESC\b", ordered_by, re.I)
+        and not re.search(r"\bNULLS\s+(?:FIRST|LAST)\b", ordered_by, re.I)
+    ):
+        return (
+            "Oracle puts NULL values first when you ORDER BY ... DESC, and your LEFT JOIN can "
+            "produce NULL totals or averages, which would be ranked as the highest. Add NULLS "
+            "LAST to the ORDER BY (for example ORDER BY AVG_SALARY DESC NULLS LAST), or use an "
+            "inner JOIN if rows without a match do not matter."
+        )
+    
+    # Rule 4 (Olympic data only): a distinct count over events must include the Games
     # year. The same event is held at every Games, so without the year a person who
     # won it three times is counted once. A year anywhere in the SQL (a filter on one
     # Games, for example) is enough to pass.
@@ -265,26 +313,103 @@ def check_rules(sql: str, schema: str) -> str:
             "at different Games is counted once, and people who won it several times are "
             "undercounted."
         )
+    # Rule 5 (Olympic data only): the same distinct count must also include the sport or
+    # discipline. Event names such as "Team" or "Singles" repeat across disciplines, so
+    # without it different events at one Games are merged and the count comes out too low.
+    # A discipline or sport anywhere in the SQL (a filter on one sport) is enough to pass.
+    if (
+        schema == "OLYM"
+        and re.search(r"COUNT\s*\(\s*DISTINCT[^)]*\bEVENT\b", sql, re.I)
+        and not re.search(r"\b(?:DISCIPLINE|SPORT)\b", sql, re.I)
+    ):
+        return (
+            "COUNT(DISTINCT ...) over events must also include the discipline (or sport) in the "
+            "distinct key, for example COUNT(DISTINCT edition || '|' || discipline || '|' || "
+            "event || '|' || event_gender). The same event name is used in different "
+            "disciplines, so without it different events are merged and the count is too low."
+        )
+    # Rule 6 (Olympic data only): a count of medals that never touches an event counts rows,
+    # and each row is ONE ATHLETE'S medal. A relay or a team game then counts once per team
+    # member (168 "golds" for the USA in 1984 instead of about 83). A question about one
+    # athlete, or a ranking of athletes, is fine, so SQL that mentions the athlete is skipped.
+    if (
+        schema == "OLYM"
+        and re.search(r"\bMEDAL\b", sql, re.I)
+        and re.search(r"COUNT\s*\(", sql, re.I)
+        and not re.search(r"EVENT", sql, re.I)
+        and not re.search(r"\bATHLETE(?:_NAME)?\b", sql, re.I)
+    ):
+        return (
+            "This counts medal rows, and each row is one athlete's medal, so a team or relay "
+            "medal is counted once per team member. To count medals won by a country, a year or "
+            "a sport, count DISTINCT events instead: join the events and use COUNT(DISTINCT "
+            "edition || '|' || discipline || '|' || event || '|' || event_gender), or the "
+            "distinct event ids together with the Games."
+        )
+    # Rule 7 (Olympic data only): the same mistake in a sneakier form. Putting the athlete's
+    # id into the distinct key (event || athlete_game_id) makes every team member a separate
+    # "medal" again. That only makes sense when the question is about an athlete by name.
+    if (
+        schema == "OLYM"
+        and re.search(r"COUNT\s*\(\s*DISTINCT[^)]*\bATHLETE_(?:GAME_)?ID\b", sql, re.I)
+        and not re.search(r"\bATHLETE(?:_NAME)?\b|\bOLYM_ATHLETES\b", sql, re.I)
+    ):
+        return (
+            "Do not put the athlete (athlete_game_id or athlete_id) in the COUNT(DISTINCT ...) key "
+            "when counting medals for a country, a year or a sport: a team or relay medal is then "
+            "counted once per team member. Count each event once: COUNT(DISTINCT edition || '|' || "
+            "discipline || '|' || event || '|' || event_gender), or the distinct event ids together "
+            "with the Games."
+        )
     return ""
+
+
+def model_settings(model_name: str) -> dict:
+    """The MODELS entry for a model, or a clear error if it has none."""
+    try:
+        return MODELS[model_name]
+    except KeyError:
+        raise ValueError(
+            f"The model {model_name!r} is not in MODELS in Streamlit/agent.py. Add an entry for it "
+            "(its provider and the requests per minute your key allows)."
+        ) from None
 
 
 def make_rate_limiter(model_name: str = MODEL_NAME) -> InMemoryRateLimiter:
     """A limiter that holds each model call back until it is safe to send.
 
-    The limit comes from MODEL_REQUESTS_PER_MINUTE. At 15 a minute that is one call every
-    4 seconds. The bucket holds a single call, so there are no bursts, and the first call
-    after the agent starts also waits one interval. A call that has to wait simply blocks
-    until its turn.
+    The limit comes from MODELS. At 15 a minute that is one call every 4 seconds. The
+    bucket holds a single call, so there are no bursts, and the first call after the agent
+    starts also waits one interval. A call that has to wait simply blocks until its turn.
     """
-    try:
-        per_minute = MODEL_REQUESTS_PER_MINUTE[model_name]
-    except KeyError:
-        raise ValueError(
-            f"No requests-per-minute limit is set for the model {model_name!r}. Add a line for it to "
-            "MODEL_REQUESTS_PER_MINUTE in Streamlit/agent.py (the limit for your key is on Google's "
-            "rate-limits page for the Gemini API)."
-        ) from None
+    per_minute = model_settings(model_name)["requests_per_minute"]
     return InMemoryRateLimiter(requests_per_second=per_minute / 60, check_every_n_seconds=0.1, max_bucket_size=1)
+
+
+def make_client(model_name: str, rate_limiter: InMemoryRateLimiter, max_output_tokens: int | None = None):
+    """The model factory: build the chat client for `model_name`, whichever company runs it.
+
+    LangChain's init_chat_model picks the right class from the provider, so the rest of the
+    agent only ever calls .invoke(prompt) and does not care which model it got.
+    """
+    config = model_settings(model_name)
+    extras = dict(config.get("settings", {}))
+    
+    limit = config.get("max_output_tokens")  # a model with a small per-minute output allowance
+    if limit:
+        max_output_tokens = min(max_output_tokens or limit, limit)
+    
+    if max_output_tokens:
+        extras[config["output_cap"]] = max_output_tokens  # each provider spells this differently
+    return init_chat_model(model_name, model_provider=config["provider"], rate_limiter=rate_limiter, **extras)
+
+
+_THINKING = re.compile(r"<think>.*?</think>", re.S)
+
+
+def reply_text(response) -> str:
+    """The plain text of a model reply. Some models put their thinking in <think> tags first."""
+    return _THINKING.sub("", response.text).strip()
 
 
 def is_daily_limit_error(error: Exception) -> bool:
@@ -315,25 +440,35 @@ class ModelChain:
     def active_name(self) -> str:
         return self.names[self.active]
 
-    def client(self, **settings) -> "ChainClient":
-        return ChainClient(self, settings)
+    def client(self, max_output_tokens: int | None = None) -> "ChainClient":
+        return ChainClient(self, max_output_tokens)
 
+
+# The name of the model behind each recent call, newest last. The evaluation notebook clears it before
+# each question and reads it afterwards, to report which model answered.
+MODELS_USED = deque(maxlen=100)
 
 class ChainClient:
-    """Works like ChatGoogleGenerativeAI.invoke(prompt), but follows the chain's active model."""
+    """Works like a chat model's .invoke(prompt), but follows the chain's active model."""
 
-    def __init__(self, chain: ModelChain, settings: dict):
+    def __init__(self, chain: ModelChain, max_output_tokens: int | None = None):
         self.chain = chain
-        self.clients = [
-            ChatGoogleGenerativeAI(model=name, rate_limiter=chain.limiters[name], **settings)
-            for name in chain.names
-        ]
+        self.max_output_tokens = max_output_tokens
+        self.clients = {}  # built on first use, so a fallback model's package or key is only needed if it is reached
+
+    def client_for(self, index: int):
+        if index not in self.clients:
+            name = self.chain.names[index]
+            self.clients[index] = make_client(name, self.chain.limiters[name], self.max_output_tokens)
+        return self.clients[index]
 
     def invoke(self, prompt: str):
         while True:
             used = self.chain.active
             try:
-                return self.clients[used].invoke(prompt)
+                reply = self.client_for(used).invoke(prompt)
+                MODELS_USED.append(self.chain.names[used])
+                return reply
             except Exception as error:
                 if not is_daily_limit_error(error):
                     raise
@@ -342,7 +477,6 @@ class ChainClient:
                 if self.chain.active == used:  # another client may have switched already
                     self.chain.active = used + 1
                     print(f"[agent] {self.chain.names[used]} is out of requests for today; switching to {self.chain.active_name}")
-
 
 def clip(text: str, limit: int = PROMPT_SQL_CHARS) -> str:
     """Shorten text to `limit` characters, so a huge failed SQL cannot bloat the next prompt."""
@@ -508,9 +642,12 @@ def build_graph(run_query: Callable[..., pd.DataFrame]):
                     "before reusing the same filter.\n"
                 )
             prompt += "Fix the query. If 0 rows really is the right answer, return the same query.\n"
-        sql = sql_llm.invoke(prompt).text.strip()
+        sql = reply_text(sql_llm.invoke(prompt))
         # Models sometimes wrap SQL in ```sql fences or end it with a semicolon; remove both.
         sql = sql.removeprefix("```sql").removeprefix("```").removesuffix("```").strip().rstrip(";")
+        
+        # Now and then a model repeats the first word ("SELECT SELECT ..."); keep one.
+        sql = re.sub(r"^\s*SELECT\s+(?=SELECT\b)", "", sql, flags=re.I)
         return {"sql": sql, "attempts": state.get("attempts", 0) + 1}
 
     def run_sql(state: State) -> dict:
@@ -663,7 +800,7 @@ def build_graph(run_query: Callable[..., pd.DataFrame]):
                     "season), say plainly that the database does not contain it, and say what "
                     "it does contain."
                 )
-        return {"answer": llm.invoke(prompt).text.strip()}
+        return {"answer": reply_text(llm.invoke(prompt))}
 
     # -------------------------------------------------------------------------
     # 3. CONDITIONAL EDGE: a function that returns the NAME of the next node.

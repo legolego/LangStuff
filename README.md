@@ -107,11 +107,16 @@ To add another, add a line to the `SCHEMAS` dictionary in `Streamlit/app.py`.
 - Results are capped at 200 rows (`ROW_LIMIT` in `Streamlit/agent.py`).
 - The model sees table and column names and types when writing SQL. When writing the answer it also sees the result itself (up to about 12,000 characters of it; if a result is cut off, the model is told so and not to guess about the rest).
 
-### Model
+### Models
 
-Google Gemini, `gemini-3.5-flash-lite`. It's set by `MODEL_NAME` in `Streamlit/agent.py`. The agent also keeps to the model's peak requests per minute (15 for this one), taken from the `MODEL_REQUESTS_PER_MINUTE` dict in the same file, so each call waits its turn instead of hitting a rate-limit error. If you switch models, add a line for the new one to that dict.
+The agent can use more than one model, from Google Gemini and from Groq. Everything it needs to know about each one is in the `MODELS` table in `Streamlit/agent.py`: the company that runs it, the peak requests per minute your key allows, and any extra settings.
 
-If the model runs out of its requests for the day (500 on the free tier), Google returns a quota error. The agent catches it and moves to the next model in `FALLBACK_MODELS` (currently `gemini-3.1-flash-lite`), printing a line to the log when it does. The switch lasts until the app restarts. Set `FALLBACK_MODELS = []` to turn it off.
+- `MODEL_NAME` is the model used (currently `gemini-3.5-flash-lite`). The model is built by one small factory (`make_client`, using LangChain's `init_chat_model`), so the rest of the agent does not care which company it is talking to.
+- The agent spaces its calls to stay under the model's requests per minute, so each call waits its turn instead of hitting a rate-limit error.
+- If the model runs out of its requests for the day (500 a day for Gemini on the free tier), the provider returns a quota error. The agent catches it and moves to the next model in `FALLBACK_MODELS`, printing a line to the log when it does. The switch lasts until the app restarts. Set `FALLBACK_MODELS = []` to turn it off.
+- To add a model, add a line to `MODELS`, then use its name in `MODEL_NAME` or `FALLBACK_MODELS`. Groq models also need `pip install langchain-groq` (already in `requirements.txt`) and `GROQ_API_KEY` in `.env`.
+
+`Evaluation.ipynb` checks every model in `MODELS` before it runs, and records which model answered each question.
 
 ## Setup
 
@@ -134,7 +139,7 @@ pip install -r Streamlit/requirements.txt
 ### The `.env` file
 
 Secrets are kept out of git. Create a file named `.env` in the project root (the
-same folder as this README) with these four keys:
+same folder as this README) with these four keys (plus `GROQ_API_KEY` if you use a Groq model):
 
 ```
 GOOGLE_API_KEY=your-google-ai-studio-key
@@ -146,6 +151,7 @@ FREE_SQL_DSN=your-freesql-connection-string
 | Key | What it's for | Where to get it |
 |-----|---------------|-----------------|
 | `GOOGLE_API_KEY` | Calls to Gemini | A free key from <https://aistudio.google.com/apikey> (no billing needed) |
+| `GROQ_API_KEY` | Calls to Groq models (optional, only if you use one) | A free key from <https://console.groq.com/keys> |
 | `FREE_SQL_USER` | Oracle FreeSQL login | Your FreeSQL account's connection details |
 | `FREE_SQL_PASSWORD` | Oracle FreeSQL password | Same |
 | `FREE_SQL_DSN` | Oracle connection string | Same (an Oracle "easy connect" string, for example `host:port/service_name`) |
