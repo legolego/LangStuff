@@ -40,6 +40,11 @@ is a manual step, so do not skip it.
 
 ## Other things to remember
 
+- `Evaluation.ipynb` holds a question bank whose reference SQL follows the schema notes in
+  `agent.py` (`SCHEMA_NOTES`): sales and order counts use COMPLETE orders only, and an Olympic
+  medal is one event at one Games (edition, discipline, event and event gender together). If you
+  change those notes, update the matching reference SQL in the bank so it still agrees.
+
 - `.env` holds secrets and is git-ignored. Never commit it or print its values.
 - `.vscode/` is the owner's editor setting and is deliberately left untracked.
 - The app reloads `agent.py` on every run, so edits to it take effect without restarting.

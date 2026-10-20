@@ -95,6 +95,7 @@ import re
 from typing import Callable, TypedDict
 
 import pandas as pd
+from langchain_core.rate_limiters import InMemoryRateLimiter
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, START, StateGraph
 
@@ -105,6 +106,21 @@ from langgraph.graph import END, START, StateGraph
 # The Gemini model used both to write the SQL and to write the final answer.
 # The app shows this name in the sidebar.
 MODEL_NAME = "gemini-3.5-flash-lite"
+
+# Models to switch to, in order, when the one in use runs out of its requests per DAY
+# (500 a day for MODEL_NAME on the free tier). Google answers that with a "quota exceeded,
+# per day" error; see is_daily_limit_error. The switch lasts until the agent is rebuilt,
+# which the app does when it restarts. Use [] to turn the fallback off.
+FALLBACK_MODELS = ["gemini-3.1-flash-lite"]
+
+# The peak number of requests per minute your API key allows for each model. The agent
+# spaces its model calls so it never goes over the limit of MODEL_NAME (see make_rate_limiter).
+# To switch models, change MODEL_NAME and make sure the new model has a line here; the
+# limit for your key is on Google's rate-limits page for the Gemini API.
+MODEL_REQUESTS_PER_MINUTE = {
+    "gemini-3.5-flash-lite": 15,
+    "gemini-3.1-flash-lite": 15,  # check this against Google's rate-limits page for your key
+}
 
 # How many times the agent may go back to write_sql after a bad result (an SQL error,
 # or a result that found nothing). 3 retries means up to 4 attempts in total.
@@ -252,6 +268,82 @@ def check_rules(sql: str, schema: str) -> str:
     return ""
 
 
+def make_rate_limiter(model_name: str = MODEL_NAME) -> InMemoryRateLimiter:
+    """A limiter that holds each model call back until it is safe to send.
+
+    The limit comes from MODEL_REQUESTS_PER_MINUTE. At 15 a minute that is one call every
+    4 seconds. The bucket holds a single call, so there are no bursts, and the first call
+    after the agent starts also waits one interval. A call that has to wait simply blocks
+    until its turn.
+    """
+    try:
+        per_minute = MODEL_REQUESTS_PER_MINUTE[model_name]
+    except KeyError:
+        raise ValueError(
+            f"No requests-per-minute limit is set for the model {model_name!r}. Add a line for it to "
+            "MODEL_REQUESTS_PER_MINUTE in Streamlit/agent.py (the limit for your key is on Google's "
+            "rate-limits page for the Gemini API)."
+        ) from None
+    return InMemoryRateLimiter(requests_per_second=per_minute / 60, check_every_n_seconds=0.1, max_bucket_size=1)
+
+
+def is_daily_limit_error(error: Exception) -> bool:
+    """True if Google refused a call because the DAILY request quota is used up.
+
+    That error is an HTTP 429 whose text names the quota, for example
+    "GenerateRequestsPerDayPerProjectPerModel". A per-minute 429 does not say "per day",
+    so it is not mistaken for this one (the client retries those itself).
+    """
+    text = str(error).lower()
+    return ("429" in text or "resource_exhausted" in text) and ("perday" in text or "per day" in text)
+
+
+class ModelChain:
+    """The models to use in order: MODEL_NAME first, then FALLBACK_MODELS.
+
+    All the clients made from one chain use the same model at any moment. When one of them
+    hits the daily limit, the whole chain moves on to the next model. Each model has its own
+    rate limiter, since each has its own requests-per-minute limit.
+    """
+
+    def __init__(self):
+        self.names = [MODEL_NAME, *FALLBACK_MODELS]
+        self.limiters = {name: make_rate_limiter(name) for name in self.names}
+        self.active = 0
+
+    @property
+    def active_name(self) -> str:
+        return self.names[self.active]
+
+    def client(self, **settings) -> "ChainClient":
+        return ChainClient(self, settings)
+
+
+class ChainClient:
+    """Works like ChatGoogleGenerativeAI.invoke(prompt), but follows the chain's active model."""
+
+    def __init__(self, chain: ModelChain, settings: dict):
+        self.chain = chain
+        self.clients = [
+            ChatGoogleGenerativeAI(model=name, rate_limiter=chain.limiters[name], **settings)
+            for name in chain.names
+        ]
+
+    def invoke(self, prompt: str):
+        while True:
+            used = self.chain.active
+            try:
+                return self.clients[used].invoke(prompt)
+            except Exception as error:
+                if not is_daily_limit_error(error):
+                    raise
+                if used + 1 >= len(self.chain.names):
+                    raise RuntimeError("Every model has used up its requests for today: " + ", ".join(self.chain.names)) from error
+                if self.chain.active == used:  # another client may have switched already
+                    self.chain.active = used + 1
+                    print(f"[agent] {self.chain.names[used]} is out of requests for today; switching to {self.chain.active_name}")
+
+
 def clip(text: str, limit: int = PROMPT_SQL_CHARS) -> str:
     """Shorten text to `limit` characters, so a huge failed SQL cannot bloat the next prompt."""
     return text if len(text) <= limit else text[:limit] + " ...(cut off)"
@@ -332,8 +424,11 @@ def build_graph(run_query: Callable[..., pd.DataFrame]):
     """
     # Two clients for the same model. The SQL writer has a cap on how much it may
     # write (see MAX_OUTPUT_TOKENS); the answer writer does not need one.
-    llm = ChatGoogleGenerativeAI(model=MODEL_NAME)
-    sql_llm = ChatGoogleGenerativeAI(model=MODEL_NAME, max_output_tokens=MAX_OUTPUT_TOKENS)
+    # Both come from ONE chain, so they share the rate limiter of whichever model is in
+    # use, and both move to the fallback model together if the daily limit is hit.
+    chain = ModelChain()
+    llm = chain.client()
+    sql_llm = chain.client(max_output_tokens=MAX_OUTPUT_TOKENS)
 
     # -------------------------------------------------------------------------
     # 2. NODES: plain functions. Take the state, return ONLY the keys you change.

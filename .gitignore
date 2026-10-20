@@ -11,3 +11,6 @@ __pycache__/
 # environment-specific agent skill links
 Streamlit/.agents/
 Streamlit/.claude/
+
+# output of the Evaluation.ipynb run
+eval_results.csv

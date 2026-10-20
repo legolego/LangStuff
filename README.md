@@ -15,6 +15,7 @@ you may be asked to sign in)
 |------|------------|
 | `LangChain01.ipynb` | LangChain 101 with Google Gemini: models, messages, prompt templates, LCEL chains (`prompt \| llm \| parser`), streaming, and structured output with Pydantic. |
 | `FreeSQLTest.ipynb` | A minimal connection test for Oracle FreeSQL using `oracledb`. |
+| `Evaluation.ipynb` | Scores the agent on a bank of 39 questions (10 answerable and 3 honest-failure questions per schema): accuracy, first-attempt success, recovery rate and honest failures. |
 | `Streamlit/app.py` | The Streamlit front end: sidebar settings, chat input, and answer / SQL / results / agent-trace tabs. |
 | `Streamlit/agent.py` | The LangGraph agent that turns a question into SQL, runs it, and explains the result. |
 | `Streamlit/requirements.txt` | Python dependencies for the app. |
@@ -108,7 +109,9 @@ To add another, add a line to the `SCHEMAS` dictionary in `Streamlit/app.py`.
 
 ### Model
 
-Google Gemini, `gemini-3.5-flash-lite`. It's set by `MODEL_NAME` in `Streamlit/agent.py`.
+Google Gemini, `gemini-3.5-flash-lite`. It's set by `MODEL_NAME` in `Streamlit/agent.py`. The agent also keeps to the model's peak requests per minute (15 for this one), taken from the `MODEL_REQUESTS_PER_MINUTE` dict in the same file, so each call waits its turn instead of hitting a rate-limit error. If you switch models, add a line for the new one to that dict.
+
+If the model runs out of its requests for the day (500 on the free tier), Google returns a quota error. The agent catches it and moves to the next model in `FALLBACK_MODELS` (currently `gemini-3.1-flash-lite`), printing a line to the log when it does. The switch lasts until the app restarts. Set `FALLBACK_MODELS = []` to turn it off.
 
 ## Setup
 
