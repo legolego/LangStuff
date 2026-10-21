@@ -92,6 +92,7 @@ them together.
 """
 import numbers
 import re
+import time
 from collections import deque
 from typing import Callable, TypedDict
 
@@ -145,6 +146,18 @@ MODELS = {
         "output_cap": "max_tokens",
         "max_output_tokens": 800,  # Groq allows only 1,000 output tokens a minute for this model
         "settings": {"reasoning_effort": "none", "max_retries": 6},  # no thinking: saves tokens on the 8,000-a-minute limit
+    },
+    "minimax/minimax-m3.1-flash:free": {  # OpenRouter's router: it picks a free model for each call; needs OPENROUTER_API_KEY
+        "provider": "openrouter",
+        "requests_per_minute": 20,  # OpenRouter allows 20 a minute on free models; 1,000 a day once you have bought credits
+        "output_cap": "max_tokens",
+        "settings": {"max_retries": 6, "reasoning": {"effort": "low"}},
+    },
+        "nvidia/nemotron-3.5-super-vl:free": {  # OpenRouter's router: it picks a free model for each call; needs OPENROUTER_API_KEY
+        "provider": "openrouter",
+        "requests_per_minute": 20,  # OpenRouter allows 20 a minute on free models; 1,000 a day once you have bought credits
+        "output_cap": "max_tokens",
+        "settings": {"max_retries": 6, "reasoning": {"effort": "none"}},
     },
 }
 
@@ -210,7 +223,10 @@ SCHEMA_NOTES = {
         "order counts. An order's revenue is the sum of ORDER_ITEMS.UNIT_PRICE * "
         "ORDER_ITEMS.QUANTITY (the price paid at the time), not PRODUCTS.UNIT_PRICE. Customer "
         "names are in CUSTOMERS.FULL_NAME. This is sample data from a fixed period, so do not "
-        "use SYSDATE for 'recent' or 'last year'."
+        "use SYSDATE for 'recent' or 'last year'. The data has no product cost: "
+        "PRODUCTS.UNIT_PRICE is the price a product is sold at, not what it cost to buy or make, "
+        "so profit, margin and cost cannot be worked out. If asked for them, return the "
+        "NOT IN DATABASE note rather than treating a price as a cost."
     ),
 }
 
@@ -411,6 +427,14 @@ def reply_text(response) -> str:
     """The plain text of a model reply. Some models put their thinking in <think> tags first."""
     return _THINKING.sub("", response.text).strip()
 
+def is_transient_error(error: Exception) -> bool:
+    """True for a temporary failure on the provider's side that is worth trying again.
+
+    Free providers sometimes time out upstream and send back an error body instead of a
+    reply, which the client reports as "Response validation failed" or a timeout.
+    """
+    text = str(error).lower()
+    return bool(re.search(r"timeout|timed out|response validation failed|overloaded|\b50[234]\b", text))
 
 def is_daily_limit_error(error: Exception) -> bool:
     """True if Google refused a call because the DAILY request quota is used up.
@@ -420,7 +444,7 @@ def is_daily_limit_error(error: Exception) -> bool:
     so it is not mistaken for this one (the client retries those itself).
     """
     text = str(error).lower()
-    return ("429" in text or "resource_exhausted" in text) and ("perday" in text or "per day" in text)
+    return ("429" in text or "resource_exhausted" in text) and ("perday" in text or "per day" in text or "per-day" in text)
 
 
 class ModelChain:
@@ -463,6 +487,7 @@ class ChainClient:
         return self.clients[index]
 
     def invoke(self, prompt: str):
+        temporary_failures = 0
         while True:
             used = self.chain.active
             try:
@@ -470,6 +495,11 @@ class ChainClient:
                 MODELS_USED.append(self.chain.names[used])
                 return reply
             except Exception as error:
+                if is_transient_error(error) and temporary_failures < 2:  # a timeout on their side: try again
+                    temporary_failures += 1
+                    print(f"[agent] {self.chain.names[used]} had a temporary error ({type(error).__name__}); trying again")
+                    time.sleep(5)
+                    continue
                 if not is_daily_limit_error(error):
                     raise
                 if used + 1 >= len(self.chain.names):
@@ -658,6 +688,11 @@ def build_graph(run_query: Callable[..., pd.DataFrame]):
         after_run() sends the agent back to write_sql with that message.
         """
         sql = state["sql"]
+
+        # A reasoning model can spend its whole reply on thinking and return nothing.
+        if not sql.strip():
+            return {"error": "The model returned an empty reply. Write one SELECT statement.", "no_rows": False}
+        
         # Safety: only read queries. (The app also shows this as the "read-only" setting.)
         if not sql.lstrip().lower().startswith(("select", "with")):
             return {"error": "Only SELECT queries are allowed.", "no_rows": False}
@@ -771,7 +806,12 @@ def build_graph(run_query: Callable[..., pd.DataFrame]):
             "with its number, for example 'Michael Phelps (23)'. "
             "Write numbers without currency symbols (no $, €, £), even for prices, salaries or "
             "revenue; you may name a unit in words, for example 'per month'. "
-            "Say exactly what was counted (for example medal events, not individual athletes)."
+            "Say exactly what was counted (for example medal events, not individual athletes). "
+            "First check that the result really is what the question asked for. If it is only "
+            "something related (for example the address of the office or site a person works at "
+            "when the question asks for their home address, or a list price when it asks for "
+            "a cost), do NOT present it as the answer: say plainly that the database does not "
+            "hold what was asked, and then say what the result actually is."
         )
         # The SQL writer says so (see write_sql) when the data cannot answer the question.
         if "NOT IN DATABASE" in csv_text.upper():

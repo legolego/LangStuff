@@ -109,12 +109,13 @@ To add another, add a line to the `SCHEMAS` dictionary in `Streamlit/app.py`.
 
 ### Models
 
-The agent can use more than one model, from Google Gemini and from Groq. Everything it needs to know about each one is in the `MODELS` table in `Streamlit/agent.py`: the company that runs it, the peak requests per minute your key allows, and any extra settings.
+The agent can use more than one model, from Google Gemini, Groq and OpenRouter. Everything it needs to know about each one is in the `MODELS` table in `Streamlit/agent.py`: the company that runs it, the peak requests per minute your key allows, and any extra settings.
 
 - `MODEL_NAME` is the model used (currently `gemini-3.5-flash-lite`). The model is built by one small factory (`make_client`, using LangChain's `init_chat_model`), so the rest of the agent does not care which company it is talking to.
 - The agent spaces its calls to stay under the model's requests per minute, so each call waits its turn instead of hitting a rate-limit error.
 - If the model runs out of its requests for the day (500 a day for Gemini on the free tier), the provider returns a quota error. The agent catches it and moves to the next model in `FALLBACK_MODELS`, printing a line to the log when it does. The switch lasts until the app restarts. Set `FALLBACK_MODELS = []` to turn it off.
-- To add a model, add a line to `MODELS`, then use its name in `MODEL_NAME` or `FALLBACK_MODELS`. Groq models also need `pip install langchain-groq` (already in `requirements.txt`) and `GROQ_API_KEY` in `.env`.
+- To add a model, add a line to `MODELS`, then use its name in `MODEL_NAME` or `FALLBACK_MODELS`. Groq models also need `pip install langchain-groq` and `GROQ_API_KEY` in `.env`; OpenRouter models need `langchain-openrouter` and `OPENROUTER_API_KEY` (both packages are in `requirements.txt`).
+- Some free models are "reasoning" models that can spend their whole reply on thinking and return nothing. Their entry in `MODELS` turns the thinking down (for example `reasoning: effort none` on OpenRouter). Temporary provider errors, such as an upstream timeout, are retried twice.
 
 `Evaluation.ipynb` checks every model in `MODELS` before it runs, and records which model answered each question.
 
@@ -152,6 +153,7 @@ FREE_SQL_DSN=your-freesql-connection-string
 |-----|---------------|-----------------|
 | `GOOGLE_API_KEY` | Calls to Gemini | A free key from <https://aistudio.google.com/apikey> (no billing needed) |
 | `GROQ_API_KEY` | Calls to Groq models (optional, only if you use one) | A free key from <https://console.groq.com/keys> |
+| `OPENROUTER_API_KEY` | Calls to OpenRouter models (optional, only if you use one) | A key from <https://openrouter.ai/keys> |
 | `FREE_SQL_USER` | Oracle FreeSQL login | Your FreeSQL account's connection details |
 | `FREE_SQL_PASSWORD` | Oracle FreeSQL password | Same |
 | `FREE_SQL_DSN` | Oracle connection string | Same (an Oracle "easy connect" string, for example `host:port/service_name`) |
